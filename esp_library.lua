@@ -1550,3 +1550,7 @@ for _, player in ipairs(Players:GetPlayers()) do
 		CreateESP(player)
 	end
 end
+
+task.wait()
+
+_G.ESPLOADED = true
