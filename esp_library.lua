@@ -406,6 +406,12 @@ local function UpdateRadar()
 	end
 end
 
+_G.UpdateESPSettings = function()
+	for key, value in pairs(Config.ESP) do
+		_G.ESPSettings[key] = value
+	end
+end
+
 function UpdateESPSettings()
 	for key, value in pairs(Config.ESP) do
 		_G.ESPSettings[key] = value
