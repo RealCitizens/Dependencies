@@ -241,6 +241,171 @@ local function UpdateArrows()
 	end
 end
 
+_G.UpdateRadar = function()
+	if not Config.ESP.RadarEnabled then
+		if _G.ESPRadarComponents then
+			_G.ESPRadarComponents.Background.Visible = false
+			_G.ESPRadarComponents.Border.Visible = false
+			_G.ESPRadarComponents.LocalPlayerDot.Visible = false
+			_G.ESPRadarComponents.CrosshairH.Visible = false
+			_G.ESPRadarComponents.CrosshairV.Visible = false
+			for _, circle in ipairs(_G.ESPRadarComponents.Circles) do
+				circle.Visible = false
+			end
+			for _, dot in pairs(_G.ESPRadarComponents.PlayerDots or {}) do
+				if dot.Visible ~= nil then
+					dot.Visible = false
+				end
+			end
+		end
+		return
+	end
+
+	if not _G.ESPRadarComponents then return end
+
+	local radarCenter = Vector2.new(
+		Config.ESP.RadarPositionX + Config.ESP.RadarSize / 2,
+		Config.ESP.RadarPositionY + Config.ESP.RadarSize / 2
+	)
+	local radarRadius = Config.ESP.RadarSize / 2
+
+	_G.ESPRadarComponents.Background.NumSides = Config.ESP.RadarSegments
+	_G.ESPRadarComponents.Background.Radius = radarRadius   -- force redraw
+	_G.ESPRadarComponents.Background.Position = radarCenter
+	_G.ESPRadarComponents.Background.Color = Config.ESP.RadarBackgroundColor
+	_G.ESPRadarComponents.Background.Transparency = Config.ESP.RadarBackgroundTransparency
+	_G.ESPRadarComponents.Background.Visible = true
+
+	_G.ESPRadarComponents.Border.NumSides = Config.ESP.RadarSegments
+	_G.ESPRadarComponents.Border.Radius = radarRadius
+	_G.ESPRadarComponents.Border.Position = radarCenter
+	_G.ESPRadarComponents.Border.Color = Config.ESP.RadarBorderColor
+	_G.ESPRadarComponents.Border.Thickness = Config.ESP.RadarBorderThickness
+	_G.ESPRadarComponents.Border.Visible = true
+
+	_G.ESPRadarComponents.LocalPlayerDot.Position = radarCenter
+	_G.ESPRadarComponents.LocalPlayerDot.Color = Config.ESP.RadarLocalPlayerColor
+	_G.ESPRadarComponents.LocalPlayerDot.Radius = Config.ESP.RadarDotSize
+	_G.ESPRadarComponents.LocalPlayerDot.Visible = true
+
+	if Config.ESP.RadarShowCrosshair then
+		_G.ESPRadarComponents.CrosshairH.From = Vector2.new(radarCenter.X - radarRadius, radarCenter.Y)
+		_G.ESPRadarComponents.CrosshairH.To = Vector2.new(radarCenter.X + radarRadius, radarCenter.Y)
+		_G.ESPRadarComponents.CrosshairH.Visible = true
+
+		_G.ESPRadarComponents.CrosshairV.From = Vector2.new(radarCenter.X, radarCenter.Y - radarRadius)
+		_G.ESPRadarComponents.CrosshairV.To = Vector2.new(radarCenter.X, radarCenter.Y + radarRadius)
+		_G.ESPRadarComponents.CrosshairV.Visible = true
+	else
+		_G.ESPRadarComponents.CrosshairH.Visible = false
+		_G.ESPRadarComponents.CrosshairV.Visible = false
+	end
+
+	if Config.ESP.RadarShowCircles then
+		for i = 1, 3 do
+			local radius = radarRadius * (i / 3)
+			_G.ESPRadarComponents.Circles[i].NumSides = Config.ESP.RadarSegments
+			_G.ESPRadarComponents.Circles[i].Radius = radius
+			_G.ESPRadarComponents.Circles[i].Position = radarCenter
+			_G.ESPRadarComponents.Circles[i].Visible = true
+		end
+	else
+		for _, circle in ipairs(_G.ESPRadarComponents.Circles) do
+			circle.Visible = false
+		end
+	end
+
+	local localChar = LocalPlayer.Character
+	if not localChar then return end
+	local localRoot = localChar:FindFirstChild("HumanoidRootPart")
+	if not localRoot then return end
+
+	local localPos = localRoot.Position
+
+	if not _G.ESPRadarComponents.PlayerDots then
+		_G.ESPRadarComponents.PlayerDots = {}
+	end
+
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player == LocalPlayer then continue end
+
+		local character = player.Character
+		if not character then
+			if _G.ESPRadarComponents.PlayerDots[player] then
+				_G.ESPRadarComponents.PlayerDots[player].Visible = false
+			end
+			continue
+		end
+
+		local rootPart = character:FindFirstChild("HumanoidRootPart")
+		if not rootPart then
+			if _G.ESPRadarComponents.PlayerDots[player] then
+				_G.ESPRadarComponents.PlayerDots[player].Visible = false
+			end
+			continue
+		end
+
+		local humanoid = character:FindFirstChild("Humanoid")
+		if not humanoid or humanoid.Health <= 0 then
+			if _G.ESPRadarComponents.PlayerDots[player] then
+				_G.ESPRadarComponents.PlayerDots[player].Visible = false
+			end
+			continue
+		end
+
+		local distance = (rootPart.Position - localPos).Magnitude
+		if distance > Config.ESP.RadarRange then
+			if _G.ESPRadarComponents.PlayerDots[player] then
+				_G.ESPRadarComponents.PlayerDots[player].Visible = false
+			end
+			continue
+		end
+
+		if not _G.ESPRadarComponents.PlayerDots[player] then
+			local dot = Drawing.new("Circle")
+			dot.Filled = true
+			dot.Radius = Config.ESP.RadarDotSize
+			dot.NumSides = 30
+			dot.Transparency = 1
+			_G.ESPRadarComponents.PlayerDots[player] = dot
+		end
+
+		local dot = _G.ESPRadarComponents.PlayerDots[player]
+
+		local relativePos = rootPart.Position - localPos
+
+		local cameraCFrame = Camera.CFrame
+		local lookVector = cameraCFrame.LookVector
+		local rightVector = cameraCFrame.RightVector
+
+		local flatRelative = Vector3.new(relativePos.X, 0, relativePos.Z)
+		local flatLook = Vector3.new(lookVector.X, 0, lookVector.Z).Unit
+		local flatRight = Vector3.new(rightVector.X, 0, rightVector.Z).Unit
+
+		local radarX = flatRelative:Dot(flatRight)
+		local radarZ = flatRelative:Dot(flatLook)
+
+		local rotatedPos = Vector3.new(radarX, 0, radarZ)
+
+		local scale = radarRadius / Config.ESP.RadarRange
+		local radarXPos = rotatedPos.X * scale
+		local radarYPos = -rotatedPos.Z * scale
+
+		local dotDistance = math.sqrt(radarXPos * radarXPos + radarYPos * radarYPos)
+		if dotDistance > radarRadius - Config.ESP.RadarDotSize then
+			local angle = math.atan2(radarYPos, radarXPos)
+			radarXPos = math.cos(angle) * (radarRadius - Config.ESP.RadarDotSize)
+			radarYPos = math.sin(angle) * (radarRadius - Config.ESP.RadarDotSize)
+		end
+
+		dot.Position = radarCenter + Vector2.new(radarXPos, radarYPos)
+
+		dot.Color = Config.ESP.RadarEnemyColor
+		dot.Radius = Config.ESP.RadarDotSize * Config.ESP.RadarScale
+		dot.Visible = true
+	end
+end
+
 local function UpdateRadar()
 	if not Config.ESP.RadarEnabled then
 		if _G.ESPRadarComponents then
@@ -415,6 +580,56 @@ end
 function UpdateESPSettings()
 	for key, value in pairs(Config.ESP) do
 		_G.ESPSettings[key] = value
+	end
+end
+
+_G.ToggleESP = function(enabled)
+	Config.ESP.Enabled = enabled
+
+	if enabled then
+		for _, player in ipairs(Players:GetPlayers()) do
+			if player ~= LocalPlayer then
+				if not _G.ESPDrawings[player] then
+					CreateESP(player)
+				end
+			end
+		end
+	else
+		for _, player in ipairs(Players:GetPlayers()) do
+			if _G.ESPDrawings[player] then
+				local esp = _G.ESPDrawings[player]
+				if esp.Box then
+					for _, line in pairs(esp.Box) do
+						line.Visible = false
+					end
+				end
+
+				if esp.Tracer then
+					esp.Tracer.Visible = false
+				end
+
+				if esp.HealthBar then
+					esp.HealthBar.Outline.Visible = false
+					esp.HealthBar.Fill.Visible = false
+					esp.HealthBar.Text.Visible = false
+				end
+
+				if esp.Info then
+					esp.Info.Name.Visible = false
+					esp.Info.Distance.Visible = false
+				end
+
+				if esp.Skeleton then
+					for _, line in pairs(esp.Skeleton) do
+						line.Visible = false
+					end
+				end
+			end
+
+			if _G.ESPHighlights[player] then
+				_G.ESPHighlights[player].Enabled = false
+			end
+		end
 	end
 end
 
@@ -1226,10 +1441,27 @@ function UpdateESP(player)
 	UpdateChams(player, character)
 end
 
+_G.ToggleRadar = function(enabled)
+	Config.ESP.RadarEnabled = enabled
+	if enabled and not _G.ESPRadarComponents.Background then
+		InitRadar()
+	end
+end
+
 function ToggleRadar(enabled)
 	Config.ESP.RadarEnabled = enabled
 	if enabled and not _G.ESPRadarComponents.Background then
 		InitRadar()
+	end
+end
+
+_G.ToggleDirectionalArrows = function(enabled)
+	Config.ESP.DirectionalArrowsEnabled = enabled
+	if not enabled then
+		for player, arrow in pairs(_G.ESPDirectionalArrows) do
+			arrow.Triangle.Visible = false
+			arrow.DistanceText.Visible = false
+		end
 	end
 end
 
